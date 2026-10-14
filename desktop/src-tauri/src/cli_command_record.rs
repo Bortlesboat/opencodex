@@ -1153,13 +1153,17 @@ pub(crate) mod tests {
     static EXECUTABLE_IO: std::sync::RwLock<()> = std::sync::RwLock::new(());
     #[cfg(unix)]
     pub(crate) fn executable_write() -> std::sync::RwLockWriteGuard<'static, ()> {
-        EXECUTABLE_IO.write().unwrap()
+        EXECUTABLE_IO
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     #[cfg(unix)]
     pub(crate) fn with_spawn<T>(spawn: impl FnOnce() -> T) -> T {
         // CLOEXEC closes descriptors at exec, not fork. Exclude executable writers until
         // the child's exec has completed; allow the lock stress test's spawners to overlap.
-        let _guard = EXECUTABLE_IO.read().unwrap();
+        let _guard = EXECUTABLE_IO
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         spawn()
     }
     #[cfg(unix)]
