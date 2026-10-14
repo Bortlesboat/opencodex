@@ -23,6 +23,10 @@ Every private path must be user-owned without extended ACLs (macOS/Linux) or car
 user/SYSTEM/Administrators DACL (Windows root; children inherit it), otherwise nothing is written.
 Atomic replacement flushes and closes its write handle before publishing the new file by rename,
 so the published executable is never held open for writing by the replacing thread.
+Unix Rust tests share a read/write lock between executable fixture writers and subprocess spawns.
+Spawns may overlap each other, but no child can inherit a fixture's writable descriptor before exec
+closes it; closing the parent's close-on-exec descriptor alone does not release a forked duplicate.
+The lock exists only in test builds and leaves ordinary record writes concurrent with spawn stress.
 
 `desktop/src-tauri/src/cli_command_posix.rs` generates a fail-closed shim, shared PATH helper
 and final managed zsh/bash/fish blocks. Reconcile separates desired rc targets from recorded

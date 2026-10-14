@@ -527,13 +527,19 @@ mod command {
     pub(super) fn run(program: &str, args: &[&str], timeout: Duration) -> Result<String, RunError> {
         let slot = Slot::take().ok_or(RunError::Failed)?;
         let deadline = Instant::now() + timeout;
-        let mut child = Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|_| RunError::Failed)?;
+        let spawn = || {
+            Command::new(program)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        #[cfg(test)]
+        let child = crate::cli_command_record::tests::with_spawn(spawn);
+        #[cfg(not(test))]
+        let child = spawn();
+        let mut child = child.map_err(|_| RunError::Failed)?;
         let readers = [drain(child.stdout.take()), drain(child.stderr.take())];
         let status = loop {
             match child.try_wait() {

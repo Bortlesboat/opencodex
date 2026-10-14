@@ -548,6 +548,8 @@ fn replace(from: &Path, to: &Path) -> Result<()> {
     io(fs::rename(from, to))
 }
 pub fn atomic(path: &Path, before: Option<&[u8]>, after: &[u8], mode: u32) -> Result<()> {
+    #[cfg(all(test, unix))]
+    let _executable_write = (mode & 0o111 != 0).then(tests::executable_write);
     let parent = path.parent().ok_or("unsafe-file")?;
     check(parent, true)?;
     rc_acl_check(path)?;
@@ -1147,6 +1149,51 @@ impl Store {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    #[cfg(unix)]
+    static EXECUTABLE_IO: std::sync::RwLock<()> = std::sync::RwLock::new(());
+    #[cfg(unix)]
+    pub(crate) fn executable_write() -> std::sync::RwLockWriteGuard<'static, ()> {
+        EXECUTABLE_IO.write().unwrap()
+    }
+    #[cfg(unix)]
+    pub(crate) fn with_spawn<T>(spawn: impl FnOnce() -> T) -> T {
+        // CLOEXEC closes descriptors at exec, not fork. Exclude executable writers until
+        // the child's exec has completed; allow the lock stress test's spawners to overlap.
+        let _guard = EXECUTABLE_IO.read().unwrap();
+        spawn()
+    }
+    #[cfg(unix)]
+    #[test]
+    fn executable_writes_wait_for_process_spawns_but_record_writes_do_not() {
+        use std::{sync::mpsc, thread, time::Duration};
+        let t = Temp::new();
+        let path = t.0.join("shim");
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let (writer, early_completion) = with_spawn(|| {
+            // Non-executable record writes must still overlap the process-spawn stress test.
+            atomic(&t.0.join("record"), None, b"record", 0o600).unwrap();
+            let path = path.clone();
+            let writer = thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                let result = atomic(&path, None, b"#!/bin/sh\nexit 0\n", 0o700);
+                done_tx.send(()).unwrap();
+                result
+            });
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let early_completion = done_rx.recv_timeout(Duration::from_millis(100));
+            (writer, early_completion)
+        });
+        if early_completion.is_err() {
+            done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        writer.join().unwrap().unwrap();
+        assert!(matches!(
+            early_completion,
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(fs::read(path).unwrap(), b"#!/bin/sh\nexit 0\n");
+    }
     pub(crate) struct Temp(pub PathBuf);
     impl Temp {
         pub(crate) fn new() -> Self {
@@ -1556,13 +1603,13 @@ pub(crate) mod tests {
             command.arg("-N");
         }
         assert!(
-            command
+            with_spawn(|| command
                 .arg(path)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap()
-                .success(),
+                .status())
+            .unwrap()
+            .success(),
             "acl-command-failed"
         );
     }
@@ -1633,12 +1680,14 @@ pub(crate) mod tests {
     fn linux_acl_inheritance_clear_and_existing_child_refusal() {
         let t = Temp::new();
         let set = |path: &Path, spec: &str| {
-            std::process::Command::new("setfacl")
-                .args(["-m", spec])
-                .arg(path)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
+            with_spawn(|| {
+                std::process::Command::new("setfacl")
+                    .args(["-m", spec])
+                    .arg(path)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+            })
         };
         let result = set(&t.0, "d:u:65534:rwx");
         if result
@@ -1908,7 +1957,9 @@ pub(crate) mod tests {
                         ready.wait();
                         let mut spawns = 0;
                         while !stop.load(Ordering::Relaxed) {
-                            assert!(Command::new(TRUE).status().unwrap().success());
+                            assert!(with_spawn(|| Command::new(TRUE).status())
+                                .unwrap()
+                                .success());
                             spawns += 1;
                         }
                         spawns
