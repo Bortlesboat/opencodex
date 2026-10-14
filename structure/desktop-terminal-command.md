@@ -21,6 +21,8 @@ disabled intent wins over pending work. Invalid records and journal conflicts bl
 unreferenced journals are deleted only under the lock after a valid (or absent) record read.
 Every private path must be user-owned without extended ACLs (macOS/Linux) or carry a protected
 user/SYSTEM/Administrators DACL (Windows root; children inherit it), otherwise nothing is written.
+Atomic replacement flushes and closes its write handle before publishing the new file by rename,
+so the published executable is never held open for writing by the replacing thread.
 
 `desktop/src-tauri/src/cli_command_posix.rs` generates a fail-closed shim, shared PATH helper
 and final managed zsh/bash/fish blocks. Reconcile separates desired rc targets from recorded

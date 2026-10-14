@@ -593,6 +593,8 @@ pub fn atomic(path: &Path, before: Option<&[u8]>, after: &[u8], mode: u32) -> Re
         if read_bytes(path)?.as_deref() != before {
             return Err("concurrent-edit".into());
         }
+        // Publish only after releasing our writer; a terminal may execute the new shim immediately.
+        drop(f);
         replace(&tmp, path)?;
         #[cfg(unix)]
         io(fs::File::open(parent).and_then(|f| f.sync_all()))?;
