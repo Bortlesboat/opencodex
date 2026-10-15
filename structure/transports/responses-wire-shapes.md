@@ -2,12 +2,13 @@
 
 ## Client rate-limit retry advice
 
-With a valid delay, `src/bridge/internal.ts` maps typed HTTP 429 `rate_limit_error` codes
-`resource_exhausted`, `rate_limit_exceeded`, and `slow_down` to `rate_limit_exceeded`.
-`src/lib/retry-delay.ts` formats typed and message-only rate-limit advice with the longest
-lower bound first; competing original hints are retained under an explicit provider-detail label.
-Other explicit verdicts, proxy replay budgets and event ordering are unchanged. This creates
-no reasoning/history item; client retry policy, Grok HTTP status and combo preflight stay intact.
+With a valid delay, `src/bridge/internal.ts` maps typed HTTP 429 `rate_limit_error` codes `resource_exhausted`, `rate_limit_exceeded`, and `slow_down` to `rate_limit_exceeded`. `src/lib/retry-delay.ts` formats typed and message-only rate-limit advice with the longest lower bound first; competing original hints are retained under an explicit provider-detail label.
+Other explicit verdicts, proxy replay budgets and event ordering are unchanged. This creates no reasoning/history item; client retry policy, Grok HTTP status and combo preflight stay intact.
+
+## Adapter incomplete reasons
+
+`src/bridge/sse.ts`, `src/bridge/response-json.ts`, and `src/protocols/encoders/adapter-events.ts` normalize explicit incomplete reasons with `truncationReasonFor(reason) ?? reason`: known output-limit aliases become `max_output_tokens`, and refusal/filter aliases become `content_filter`.
+Unknown reasons remain verbatim, including `adapter_eof`, `max_messages`, and `steered`; message, retryability, usage, and incomplete status are preserved. `tests/adapters/bridge-nonstreaming-terminal.test.ts` covers both Responses projections and real passthrough parsing; the direct Chat and Messages parity suites cover the client-wire outcomes.
 
 ## Compaction image input
 
@@ -525,7 +526,6 @@ terminal tail, while an opted-in terminal repair keeps its unframed suffix taint
 request-log accounting without promoting a truncated repair candidate. Terminal repair reconciles one delayed LF after a consumed CR delimiter, preserving its byte without treating it as an unframed EOF suffix; additional suffix bytes remain subject to the same strict check.
 
 > Decision record: [ADR-0044](../decisions/ADR-0044-responses-http-sse.md)
-
 
 ## Inbound history and code-mode shell wire repairs
 
