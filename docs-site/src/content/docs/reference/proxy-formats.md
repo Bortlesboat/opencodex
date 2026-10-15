@@ -296,7 +296,8 @@ in both JSON and SSE. Partial output is preserved, and the bridge does not emit 
 completion event for that open call. Calls already completed keep their status. This preserves
 the provider outcome; client retry behavior for incomplete responses is unchanged.
 
-For adapter-backed responses, explicit incomplete reasons use the same vocabulary in JSON and SSE:
+Explicit incomplete reasons use the same vocabulary in adapter-backed responses and native
+Responses JSON, SSE, and WebSocket delivery:
 output-limit aliases such as `length` and `max_tokens` become `max_output_tokens`, and refusal/filter
 aliases such as `refusal` become `content_filter`. Other reasons remain unchanged, along with the
 provider's message, retryability, and usage. Direct Chat and Messages encoders apply the same mapping.

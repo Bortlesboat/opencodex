@@ -157,7 +157,7 @@ describe("explicit incomplete reasons use the Responses vocabulary", () => {
         } else {
           events.push(...await adapter.parseResponse!(Response.json(payload), budget));
         }
-        expect(events).toEqual([{ type: "incomplete", reason: "length" }]);
+        expect(events).toEqual([{ type: "incomplete", reason: "max_output_tokens" }]);
         for (const streaming of [true, false]) {
           expect(await project(events, streaming)).toMatchObject({
             status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
